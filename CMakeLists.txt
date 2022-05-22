@@ -17,7 +17,7 @@ add_executable(theremin
 )
 
 pico_enable_stdio_usb(theremin 0)
-pico_enable_stdio_uart(theremin 1)
+pico_enable_stdio_uart(theremin 0)
 
 target_include_directories(theremin PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 

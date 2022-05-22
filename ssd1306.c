@@ -33,12 +33,16 @@ SOFTWARE.
 #include "ssd1306.h"
 #include "font.h"
 
-void setup_gpios(void) {
-    i2c_init(i2c1, 400000);
-    gpio_set_function(2, GPIO_FUNC_I2C);
-    gpio_set_function(3, GPIO_FUNC_I2C);
-    gpio_pull_up(2);
-    gpio_pull_up(3);
+// Match SDA to SDA and SCL to SCL
+#define DISPLAY_SDA_PIN 0
+#define DISPLAY_SCL_PIN 1
+
+void setup_ssd_gpios(void) {
+    i2c_init(i2c0, 400000);
+    gpio_set_function(DISPLAY_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(DISPLAY_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(DISPLAY_SDA_PIN);
+    gpio_pull_up(DISPLAY_SCL_PIN);
 }
 
 inline static void swap(uint32_t *a, uint32_t *b) {

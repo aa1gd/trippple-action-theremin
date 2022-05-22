@@ -17,4 +17,5 @@ bool genChord(int numeral, int inversion, struct Chord prev, volatile struct Cho
 int evalChord(struct Chord previous, struct Chord next);
 void printChord(struct Chord c);
 void adjustSpacing(struct Chord *c);
+int inversionConversion(int level);
 int figBassToNumeral(int bass, int inversion);

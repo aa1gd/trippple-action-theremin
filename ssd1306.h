@@ -70,7 +70,7 @@ typedef struct {
     size_t bufsize;		/**< buffer size */
 } ssd1306_t;
 
-void setup_gpios(void);
+void setup_ssd_gpios(void);
 
 /**
 *	@brief initialize display

@@ -13,6 +13,37 @@
 
 #define PITCH_OFFSET 0
 
+#define DISPLAY_SDA_PIN 0
+#define DISPLAY_SCL_PIN 1
+
+#define ROTARY_1_CLK_PIN 13
+#define ROTARY_1_DT_PIN 14
+#define ROTARY_1_SW_PIN 15
+#define ROTARY_2_CLK_PIN 5
+#define ROTARY_2_DT_PIN 6
+#define ROTARY_2_SW_PIN 7
+#define ROTARY_3_CLK_PIN 2
+#define ROTARY_3_DT_PIN 3
+#define ROTARY_3_SW_PIN 4
+
+#define SENSOR_1_TRIG_PIN 8
+#define SENSOR_1_ECHO_PIN 9
+#define SENSOR_2_TRIG_PIN 16
+#define SENSOR_2_ECHO_PIN 17
+
+#define MUX_1_A_PIN 18
+#define MUX_1_B_PIN 19
+#define MUX_1_C_PIN 20
+#define MUX_2_A_PIN 10
+#define MUX_2_B_PIN 11
+#define MUX_2_C_PIN 12
+#define MUX_2_DISABLE_PIN 21
+
+#define FOOT_PEDAL_PIN 22
+
+#define MAX_RANGE_1 64
+#define MAX_RANGE_2 64
+
 enum
 {
     BLINK_NOT_MOUNTED = 250,
@@ -23,28 +54,58 @@ enum
 static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 const uint LED_PIN = PICO_DEFAULT_LED_PIN;
 
+void setup_gpios();
 void led_blinking_task(void);
 void midi_write_note(uint8_t note, uint8_t volume);
 void midi_turn_off_note(uint8_t note);
+void midi_reset_all();
 void midi_play_chord(struct Chord previous, struct Chord next);
 
-int prevNote1 = 0;
-int prev_interval_1 = -1;
+// TODO: write code for multiplexers
 
-struct Note default_note;
+void read_rotaries();
+static bool prevStateCLK1;
+static bool prevStateCLK2;
+static bool prevStateCLK3;
+static bool prevButtonState1;
+static bool prevButtonState2;
+static bool prevButtonState3;
+
+// State variables for the 4 different operating modes
+// Melody
+static int prevMelodyNote = 0;
+static int prevVolume = 0;
+
+// Chords
+static int prevInversion = 0;
+static int prevDegree = 0;
 volatile struct Chord second, third;
 
-const int melodic_major_scale[8] = {0, 2, 4, 5, 7, 9, 11, 12};
-const int playable_natural_minor_scale[8] = {0, 2, 3, 5, 7, 8, 10, 12}; 
+// Figured Bass
+static int prevBassNote = 0;
+static int prevFigBassInversion;
 
-bool isMajorYep = true;
+// Duet
+static int prevDuetNote1 = 0;
+static int prevDuetNote2 = 0;
+
+static struct Note default_note; // is this necessary?
+
+// TODO: add the other scales
+static const int melodic_major_scale[8] = {0, 2, 4, 5, 7, 9, 11, 12};
+static const int playable_natural_minor_scale[8] = {0, 2, 3, 5, 7, 8, 10, 12}; 
+
+int key = 48;
+bool major = true;
+static int operating_mode = 0; // 0 -> melodies, 1 -> chords, 2 -> figured bass, 3 -> melody harmonization
+static int midi_channel = 0; // between 0 and 15
 
 int main()
 {
+    // Neccesary?
     default_note.pitch = 0;
     default_note.isSeventh = false;
     default_note.isLeadingTone = false;
-
 
     third.notes[0] = default_note;
     third.notes[1] = default_note;
@@ -53,17 +114,29 @@ int main()
     third.score = -1;
 
     second = third;
+    // end neccessary?
+
     board_init();
     tusb_init();
 
-    init_sonar();
+    setup_gpios();
 
     // Setup SSD1306 display
-    setup_gpios();
+    /*
     ssd1306_t disp;
-    disp.external_vcc=false;
-    ssd1306_init(&disp, 128, 64, 0x3C, i2c1);
+    disp.external_vcc = false;
+    ssd1306_init(&disp, 128, 64, 0x3C, i2c0);
     ssd1306_clear(&disp);
+    */
+
+    // Get initial rotary readings
+    prevStateCLK1 = gpio_get(ROTARY_1_CLK_PIN);
+    prevStateCLK2 = gpio_get(ROTARY_2_CLK_PIN);
+    prevStateCLK3 = gpio_get(ROTARY_3_CLK_PIN);
+
+    prevButtonState1 = gpio_get(ROTARY_1_SW_PIN); // it's high when not pressed, low when pressed
+    prevButtonState2 = gpio_get(ROTARY_2_SW_PIN);
+    prevButtonState3 = gpio_get(ROTARY_3_SW_PIN);
 
     while (true)
         {
@@ -74,11 +147,83 @@ int main()
             while ( tud_midi_available() )
                 tud_midi_packet_read(packet);
 
+            midi_write_note(60, 127);
+            sleep_ms(1000);
+            midi_turn_off_note(60);
+            sleep_ms(100);
             // Check for rotary switch / button inputs
+            //read_rotaries();
+            /*
+            if (operating_mode == 0) // single note melody mode
+            {
+                int level = measure_median_interval(SENSOR_2_TRIG_PIN, SENSOR_2_TRIG_PIN, MAX_RANGE_2, 8);               
+                int vol = measure_median_interval(SENSOR_1_TRIG_PIN, SENSOR_1_TRIG_PIN, MAX_RANGE_1, 128);
+
+                if (level == -1)
+                {
+                    if (prevMelodyNote != 0)
+                    midi_turn_off_note(prevMelodyNote);
+                    prevMelodyNote = 0;
+                    continue;
+                }
+
+                if (vol == -1)
+                    vol = 127;
+
+                int deg = level - PITCH_OFFSET;
+                int pitch = 0;
+
+                if (deg >= 0)
+                {
+                    if (major)
+                        pitch = melodic_major_scale[deg] + key;
+                    else
+                        pitch = playable_natural_minor_scale[deg] + key;
+                } else
+                {
+                    deg += 7;
+                    if (major)
+                        pitch = melodic_major_scale[deg] + key - 12;
+                    else
+                        pitch = playable_natural_minor_scale[deg] + key - 12;
+                }
+
+                if (pitch != prevMelodyNote || vol != prevVolume)
+                {
+                    if (prevMelodyNote != 0)
+                        midi_turn_off_note(prevMelodyNote);
+                    midi_write_note(pitch, vol);
+                    prevMelodyNote = pitch;
+                    prevVolume = vol;
+                }
+            }
+            */
+            /*
+            else if (operating_mode == 1) // chords mode
+            {
+                int degree = measure_median_interval(SENSOR_2_TRIG_PIN, SENSOR_2_TRIG_PIN, MAX_RANGE_2, 7);               
+                int inversionLevel = measure_median_interval(SENSOR_1_TRIG_PIN, SENSOR_1_TRIG_PIN, MAX_RANGE_1, 7);
+
+                int inversion = inversionConversion(inversionLevel);
+                // check foot pedal here
+            }
+            else if (operating_mode == 2) // figured bass mode
+            {
+
+            }
+            else if (operating_mode == 3) // duet mode
+            {
+
+            }
+            else // something went wrong
+            {
+                return 1;
+            }
+            */
+
+            /*
             // Scan ultrasound sensors
-            // float distOne = measure_median_distance();
-            // int level = make_interval(distOne, 8);
-            int level = measure_median_interval(8);
+            int level = measure_median_interval(SENSOR_1_TRIG_PIN, SENSOR_1_TRIG_PIN, MAX_RANGE_1, 8);
             
             if (level != prev_interval_1 && level != -1) // may need some editing
             {
@@ -89,14 +234,14 @@ int main()
                 int nowNote;
                 if (degree >= 0)
                 {
-                    if (isMajorYep)
+                    if (major)
                         nowNote = melodic_major_scale[degree] + 60;
                     else
                         nowNote = playable_natural_minor_scale[degree] + 60;
                 } else
                 {
                     degree += 7;
-                    if (isMajorYep)
+                    if (major)
                         nowNote = melodic_major_scale[degree] + 48;
                     else
                         nowNote = playable_natural_minor_scale[degree] + 48;
@@ -111,7 +256,8 @@ int main()
                 prev_interval_1 = -1;
                 prevNote1 = 0;
             }
-            
+            */
+
             /*
             if (level != prev_interval_1 && level != -1 && level > 6) // may need some editing
             {
@@ -125,19 +271,6 @@ int main()
                 for (int i = 20; i < 120; i++){
                     midi_turn_off_note(i);
                 }
-            }
-            */
-
-            // Play fake notes
-            /*
-            uint8_t newDist = fake_get_distance();
-            if (dist1 != newDist)
-            {
-                dist1 = newDist;
-                if (prevNote1 != 0)
-                    midi_turn_off_note(prevNote1);
-                midi_write_note(dist1 + 60, 127);
-                prevNote1 = dist1 + 60;
             }
             */
 
@@ -208,6 +341,13 @@ void midi_turn_off_note(uint8_t note)
     tud_midi_stream_write(cable_num, note_off, 3);
 }
 
+void midi_reset_all(){
+    for (int i = 0; i < 128; i++)
+    {
+        midi_turn_off_note(i);
+    }
+}
+
 void midi_play_chord(struct Chord previous, struct Chord next)
 {
     for (int i = 0; i < 4; i++)
@@ -237,4 +377,129 @@ void led_blinking_task(void)
 
     board_led_write(led_state);
     led_state = 1 - led_state; // toggle
+}
+
+void setup_gpios()
+{
+    //setup_ssd_gpios();
+
+    gpio_init(ROTARY_1_CLK_PIN);
+    gpio_init(ROTARY_1_DT_PIN);
+    gpio_init(ROTARY_1_SW_PIN);
+    gpio_init(ROTARY_2_CLK_PIN);
+    gpio_init(ROTARY_2_DT_PIN);
+    gpio_init(ROTARY_2_SW_PIN);
+    gpio_init(ROTARY_3_CLK_PIN);
+    gpio_init(ROTARY_3_DT_PIN);
+    gpio_init(ROTARY_3_SW_PIN);
+
+    gpio_set_dir(ROTARY_1_CLK_PIN, GPIO_IN);
+    gpio_set_dir(ROTARY_1_DT_PIN, GPIO_IN);
+    gpio_set_dir(ROTARY_1_SW_PIN, GPIO_IN);
+    gpio_set_dir(ROTARY_2_CLK_PIN, GPIO_IN);
+    gpio_set_dir(ROTARY_2_DT_PIN, GPIO_IN);
+    gpio_set_dir(ROTARY_2_SW_PIN, GPIO_IN);
+    gpio_set_dir(ROTARY_3_CLK_PIN, GPIO_IN);
+    gpio_set_dir(ROTARY_3_DT_PIN, GPIO_IN);
+    gpio_set_dir(ROTARY_3_SW_PIN, GPIO_IN);
+
+    init_sonar();
+
+    gpio_init(MUX_1_A_PIN);
+    gpio_init(MUX_1_B_PIN);
+    gpio_init(MUX_1_C_PIN);
+    gpio_init(MUX_2_A_PIN);
+    gpio_init(MUX_2_B_PIN);
+    gpio_init(MUX_2_C_PIN);
+    gpio_init(MUX_2_DISABLE_PIN);
+
+    gpio_set_dir(MUX_1_A_PIN, GPIO_OUT);
+    gpio_set_dir(MUX_1_B_PIN, GPIO_OUT);
+    gpio_set_dir(MUX_1_C_PIN, GPIO_OUT);
+    gpio_set_dir(MUX_2_A_PIN, GPIO_OUT);
+    gpio_set_dir(MUX_2_B_PIN, GPIO_OUT);
+    gpio_set_dir(MUX_2_C_PIN, GPIO_OUT);
+    gpio_set_dir(MUX_2_DISABLE_PIN, GPIO_OUT);
+
+    gpio_init(FOOT_PEDAL_PIN);
+    gpio_set_dir(FOOT_PEDAL_PIN, GPIO_IN);
+}
+
+// TODO: add the protection for ++ and --
+void read_rotaries()
+{
+    // Read the first encoder
+    bool currentStateCLK = gpio_get(ROTARY_1_CLK_PIN);
+
+    if (currentStateCLK != prevStateCLK1 && currentStateCLK == false)
+    {
+        if (gpio_get(ROTARY_1_DT_PIN) == currentStateCLK)
+        {
+            // Counterclockwise
+            key--;
+        }
+        else 
+        {
+            key++;
+        }
+    }
+    prevStateCLK1 = currentStateCLK;
+
+    bool currentStateSW = gpio_get(ROTARY_1_SW_PIN);
+
+    if (!currentStateSW && prevButtonState1)
+        major = !major;
+    
+    prevButtonState1 = currentStateSW;
+
+    // Now read the second encoder
+    currentStateCLK = gpio_get(ROTARY_2_CLK_PIN);
+
+    if (currentStateCLK != prevStateCLK2 && currentStateCLK == false)
+    {
+        if (gpio_get(ROTARY_2_DT_PIN) != currentStateCLK)
+        {
+            // Counterclockwise
+            operating_mode--;
+        }
+        else 
+        {
+            operating_mode++;
+        }
+    }
+
+    prevStateCLK2 = currentStateCLK;
+
+    currentStateSW = gpio_get(ROTARY_2_SW_PIN);
+
+    if (!currentStateSW && prevButtonState2)
+        midi_reset_all();
+
+    prevButtonState2 = currentStateSW;
+
+
+    // Finally, read the third encoder
+    currentStateCLK = gpio_get(ROTARY_3_CLK_PIN);
+
+    if (currentStateCLK != prevStateCLK3 && currentStateCLK == false)
+    {
+        if (gpio_get(ROTARY_3_DT_PIN) != currentStateCLK)
+        {
+            // Counterclockwise
+            midi_channel--;
+        }
+        else 
+        {
+            midi_channel++;
+        }
+    }
+
+    prevStateCLK3 = currentStateCLK;
+
+    currentStateSW = gpio_get(ROTARY_3_SW_PIN);
+
+    if (!currentStateSW && prevButtonState3)
+        ;
+
+    prevButtonState3 = currentStateSW;
 }

@@ -22,62 +22,14 @@ const int harmonic_minor_scale[7] = {0, 2, 3, 5, 7, 8, 11};
 // Lookup table for note names
 
 const int frustrated_leading_tone_penalty = 5;
-// const int didnt_double_root_penalty = 5;
 const int jumpy_alto_or_tenor_penalty_multiplier = 2;
 
-int key = 48; // C3
-bool major = true;
-
-/*
-void blink(int times)
-{
-    for (int i = 0; i < times; i++)
-        {
-
-            board_led_write(1);
-            gpio_put(22, 1);
-            sleep_ms(100);
-            board_led_write(0);
-            gpio_put(22, 0);
-            sleep_ms(100);
-        } 
-}
-*/
+extern int key;
+extern int major;
 
 bool genChord(int numeral, int inversion, struct Chord prev, volatile struct Chord *tobechanged)
 {
-    // sanity checks
-    /*
-    // blink the numeral
-    board_led_write(0);
-    sleep_ms(1000);
-    blink(numeral);
-    sleep_ms(1000);
-    //blink the inversions
-    blink(inversion);
-    sleep_ms(1000);
-
-    if (inversion < 0)
-    {
-        board_led_write(1);
-        sleep_ms(2000);
-        board_led_write(0);
-    }
-
-    //blink scale degree of notes in previous chord
-    for (int i = 0; i < 4; i++)
-        {
-            if (prev.notes[i].pitch < 20 || prev.notes[i].pitch > 127)
-            {
-                board_led_write(1);
-                sleep_ms(1000);
-                board_led_write(0);
-            }
-            blink((prev.notes[i].pitch - key) % 12 + 1);
-            sleep_ms(1000);
-        } 
-        */
-    static struct Chord best;
+   static struct Chord best;
     // putting 69s so I know if best is not assigned... which would mean no combinations work
     best.notes[0].pitch = -69;
 
@@ -568,6 +520,37 @@ void adjustSpacing(struct Chord *c)
 
     if (adjusted)
         adjustSpacing(c);
+}
+
+// Converts sensor level to 0, 664-765-4342
+int inversionConversion(int level)
+{
+    switch (level)
+    {
+        case 0:
+            return 0;
+
+        case 1:
+            return 6;
+        
+        case 2:
+            return 64;
+
+        case 3:
+            return 7;
+
+        case 4:
+            return 65;
+
+        case 5:
+            return 43;
+        
+        case 6:
+            return 42;
+        
+        default:
+            return -1;
+    }
 }
 
 int figBassToNumeral(int bass, int inversion)
