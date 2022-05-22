@@ -116,7 +116,7 @@ static int midi_channel = 0; // between 0 and 15
 
 int main()
 {
-    set_sys_clock_khz(250000, true);
+    //set_sys_clock_khz(250000, true);
     // Neccesary?
     default_note.pitch = 0;
     default_note.isSeventh = false;
@@ -188,10 +188,14 @@ int main()
     tusb_init();
 
     static bool twentysix = false;
-    tud_task(); // tinyusb device task
-    busy_wait_ms(5000);
-    ssd1306_clear(&disp);
-    ssd1306_show(&disp);
+    //tud_task(); // tinyusb device task
+    //busy_wait_ms(5000);
+    
+    //absolute_time_t startup = get_absolute_time();
+    // Gives the computer some time to pick up the device
+    absolute_time_t endstartup = delayed_by_ms(get_absolute_time(), 3000);
+    while (absolute_time_diff_us(get_absolute_time(), endstartup) > 0)
+        tud_task();
 
     while (true)
         {

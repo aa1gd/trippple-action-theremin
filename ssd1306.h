@@ -1,3 +1,5 @@
+#pragma once
+
 /*
 MIT License
 
@@ -188,27 +190,7 @@ void ssd13606_draw_empty_square(ssd1306_t *p, uint32_t x, uint32_t y, uint32_t w
 	@param[in] x_offset : offset of horizontal coordinate
 	@param[in] y_offset : offset of vertical coordinate
 */
-void ssd1306_bmp_show_image_with_offset(ssd1306_t *p, const uint8_t *data, const long size, uint32_t x_offset, uint32_t y_offset);
 
-/**
-	@brief draw monochrome bitmap
-
-	@param[in] p : instance of display
-	@param[in] data : image data (whole file)
-	@param[in] size : size of image data in bytes
-*/
-void ssd1306_bmp_show_image(ssd1306_t *p, const uint8_t *data, const long size);
-
-/**
-	@brief draw char with given font
-
-	@param[in] p : instance of display
-	@param[in] x : x starting position of char
-	@param[in] y : y starting position of char
-	@param[in] scale : scale font to n times of original size (default should be 1)
-	@param[in] font : pointer to font
-	@param[in] c : character to draw
-*/
 void ssd1306_draw_char_with_font(ssd1306_t *p, uint32_t x, uint32_t y, uint32_t scale, const uint8_t *font, char c);
 
 /**

@@ -14,18 +14,18 @@
  0  1  2  3  4  5  6  7  8  9  10 11 12
 */
 
-const int major_scale[7] = {0, 2, 4, 5, 7, 9, 11}; // whoa whoa hey whoa whoa whoa (hey)
-const int natural_minor_scale[7] = {0, 2, 3, 5, 7, 8, 10}; 
-const int melodic_minor_scale[7] = {0, 2, 3, 5, 7, 9, 11}; // ascending
-const int harmonic_minor_scale[7] = {0, 2, 3, 5, 7, 8, 11};
+static const int major_scale[7] = {0, 2, 4, 5, 7, 9, 11}; // whoa whoa hey whoa whoa whoa (hey)
+static const int natural_minor_scale[7] = {0, 2, 3, 5, 7, 8, 10}; 
+static const int melodic_minor_scale[7] = {0, 2, 3, 5, 7, 9, 11}; // ascending
+static const int harmonic_minor_scale[7] = {0, 2, 3, 5, 7, 8, 11};
 
 // Lookup table for note names
 
-const int frustrated_leading_tone_penalty = 5;
-const int jumpy_alto_or_tenor_penalty_multiplier = 2;
+static const int frustrated_leading_tone_penalty = 5;
+static const int jumpy_alto_or_tenor_penalty_multiplier = 2;
 
-extern int key;
-extern int major;
+static int key = 48;
+static bool major = true;
 
 bool genChord(int numeral, int inversion, struct Chord prev, volatile struct Chord *tobechanged)
 {
