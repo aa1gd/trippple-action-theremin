@@ -15,9 +15,9 @@ struct Chord
         int score;
     };
 
-bool genChord(int numeral, int inversion, struct Chord prev, volatile struct Chord *tobechanged);
-int evalChord(struct Chord previous, struct Chord next);
-void printChord(struct Chord c);
+bool genChord(int key, bool major, int numeral, int inversion, struct Chord prev, volatile struct Chord *tobechanged);
+int evalChord(int key, struct Chord previous, struct Chord next);
+//void printChord(struct Chord c);
 void adjustSpacing(struct Chord *c);
 int inversionConversion(int level);
-int figBassToNumeral(int bass, int inversion);
+int figBassToNumeral(int key, bool major, int bass, int inversion);

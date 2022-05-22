@@ -15,8 +15,6 @@
 */
 
 static const int major_scale[7] = {0, 2, 4, 5, 7, 9, 11}; // whoa whoa hey whoa whoa whoa (hey)
-static const int natural_minor_scale[7] = {0, 2, 3, 5, 7, 8, 10}; 
-static const int melodic_minor_scale[7] = {0, 2, 3, 5, 7, 9, 11}; // ascending
 static const int harmonic_minor_scale[7] = {0, 2, 3, 5, 7, 8, 11};
 
 // Lookup table for note names
@@ -24,10 +22,7 @@ static const int harmonic_minor_scale[7] = {0, 2, 3, 5, 7, 8, 11};
 static const int frustrated_leading_tone_penalty = 5;
 static const int jumpy_alto_or_tenor_penalty_multiplier = 2;
 
-static int key = 48;
-static bool major = true;
-
-bool genChord(int numeral, int inversion, struct Chord prev, volatile struct Chord *tobechanged)
+bool genChord(int key, bool major, int numeral, int inversion, struct Chord prev, volatile struct Chord *tobechanged)
 {
    static struct Chord best;
     // putting 69s so I know if best is not assigned... which would mean no combinations work
@@ -180,7 +175,7 @@ bool genChord(int numeral, int inversion, struct Chord prev, volatile struct Cho
                     guess.notes[1].pitch -= tenorTweak;
                     adjustSpacing(&guess);
                     guess.notes[0].pitch -= bassDownShift;
-                    guess.score = evalChord(prev, guess); 
+                    guess.score = evalChord(key, prev, guess); 
                     if (guess.score != -1 && guess.score < best.score)
                         best = guess;
 
@@ -192,7 +187,7 @@ bool genChord(int numeral, int inversion, struct Chord prev, volatile struct Cho
                     guess.notes[1].pitch -= tenorTweak;
                     adjustSpacing(&guess);
                     guess.notes[0].pitch -= bassDownShift;
-                    guess.score = evalChord(prev, guess); 
+                    guess.score = evalChord(key, prev, guess); 
                     if (guess.score != -1 && guess.score < best.score)
                         best = guess;
 
@@ -204,7 +199,7 @@ bool genChord(int numeral, int inversion, struct Chord prev, volatile struct Cho
                     guess.notes[1].pitch -= tenorTweak;
                     adjustSpacing(&guess);
                     guess.notes[0].pitch -= bassDownShift;
-                    guess.score = evalChord(prev, guess); 
+                    guess.score = evalChord(key, prev, guess); 
                     if (guess.score != -1 && guess.score < best.score)
                         best = guess;
 
@@ -216,7 +211,7 @@ bool genChord(int numeral, int inversion, struct Chord prev, volatile struct Cho
                     guess.notes[1].pitch -= tenorTweak;
                     adjustSpacing(&guess);
                     guess.notes[0].pitch -= bassDownShift;
-                    guess.score = evalChord(prev, guess); 
+                    guess.score = evalChord(key, prev, guess); 
                     if (guess.score != -1 && guess.score < best.score)
                         best = guess;
 
@@ -228,7 +223,7 @@ bool genChord(int numeral, int inversion, struct Chord prev, volatile struct Cho
                     guess.notes[1].pitch -= tenorTweak;
                     adjustSpacing(&guess);
                     guess.notes[0].pitch -= bassDownShift;
-                    guess.score = evalChord(prev, guess); 
+                    guess.score = evalChord(key, prev, guess); 
                     if (guess.score != -1 && guess.score < best.score)
                         best = guess;
 
@@ -240,7 +235,7 @@ bool genChord(int numeral, int inversion, struct Chord prev, volatile struct Cho
                     guess.notes[1].pitch -= tenorTweak;
                     adjustSpacing(&guess);
                     guess.notes[0].pitch -= bassDownShift;
-                    guess.score = evalChord(prev, guess); 
+                    guess.score = evalChord(key, prev, guess); 
                     if (guess.score != -1 && guess.score < best.score)
                         best = guess;
                 }
@@ -278,7 +273,7 @@ bool genChord(int numeral, int inversion, struct Chord prev, volatile struct Cho
     return true;
 }
 
-
+/*
 void printChord(struct Chord c)
 {
     bool useLetters = true;
@@ -333,9 +328,9 @@ void printChord(struct Chord c)
         }
     printf("\n");
 }
+*/
 
-
-int evalChord(struct Chord previous, struct Chord next)
+int evalChord(int key, struct Chord previous, struct Chord next)
 {
     //printf("Started eval\n");
     //printChord(next);
@@ -553,7 +548,7 @@ int inversionConversion(int level)
     }
 }
 
-int figBassToNumeral(int bass, int inversion)
+int figBassToNumeral(int key, bool major, int bass, int inversion)
 {
     int numeral;
     int bassNote;
