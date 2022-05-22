@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "pico/binary_info.h"
@@ -44,15 +45,20 @@
 #define MAX_RANGE_1 64
 #define MAX_RANGE_2 64
 
+#define BLINK_NOT_MOUNTED 250
+#define BLINK_MOUNTED 500
+#define BLINK_SUSPENDED 1000
+/*
 enum
 {
     BLINK_NOT_MOUNTED = 250,
-    BLINK_MOUNTED = 1000,
-    BLINK_SUSPENDED = 2500,
+    BLINK_MOUNTED = 500,
+    BLINK_SUSPENDED = 1000,
 };
+*/
 
-static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
-const uint LED_PIN = PICO_DEFAULT_LED_PIN;
+static volatile uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
+static const uint LED_PIN = PICO_DEFAULT_LED_PIN;
 
 void setup_gpios();
 void led_blinking_task(void);
@@ -60,6 +66,13 @@ void midi_write_note(uint8_t note, uint8_t volume);
 void midi_turn_off_note(uint8_t note);
 void midi_reset_all();
 void midi_play_chord(struct Chord previous, struct Chord next);
+
+void tud_mount_cb(void);
+void tud_umount_cb(void);
+void tud_suspend_cb(bool remote_wakeup_en);
+void tud_resume_cb(void);
+
+void ssd_loop(ssd1306_t *disp);
 
 // TODO: write code for multiplexers
 
@@ -79,7 +92,7 @@ static int prevVolume = 0;
 // Chords
 static int prevInversion = 0;
 static int prevDegree = 0;
-volatile struct Chord second, third;
+static volatile struct Chord second, third;
 
 // Figured Bass
 static int prevBassNote = 0;
@@ -95,13 +108,15 @@ static struct Note default_note; // is this necessary?
 static const int melodic_major_scale[8] = {0, 2, 4, 5, 7, 9, 11, 12};
 static const int playable_natural_minor_scale[8] = {0, 2, 3, 5, 7, 8, 10, 12}; 
 
-int key = 48;
-bool major = true;
+// TODO: key and major need a solution to get to chords
+static int key = 48;
+static bool major = true;
 static int operating_mode = 0; // 0 -> melodies, 1 -> chords, 2 -> figured bass, 3 -> melody harmonization
 static int midi_channel = 0; // between 0 and 15
 
 int main()
 {
+    set_sys_clock_khz(250000, true);
     // Neccesary?
     default_note.pitch = 0;
     default_note.isSeventh = false;
@@ -116,20 +131,48 @@ int main()
     second = third;
     // end neccessary?
 
-    board_init();
-    tusb_init();
-
     setup_gpios();
 
+    // for sensor diagnostics
+    gpio_init(26);
+    gpio_set_dir(26, GPIO_OUT);
+
     // Setup SSD1306 display
-    /*
-    ssd1306_t disp;
+    static ssd1306_t disp;
     disp.external_vcc = false;
     ssd1306_init(&disp, 128, 64, 0x3C, i2c0);
     ssd1306_clear(&disp);
-    */
 
-    // Get initial rotary readings
+    /*
+    ssd1306_draw_string(&disp, 8, 24, 2, "Starting");
+    ssd1306_show(&disp);
+    busy_wait_ms(3000);
+    ssd1306_clear(&disp);
+    ssd1306_show(&disp);
+
+    float gahdist = measure_distance(SENSOR_2_TRIG_PIN, SENSOR_2_ECHO_PIN, MAX_RANGE_2);
+    char testMessage[8];
+    sprintf(testMessage, "h: %.1f", gahdist);
+
+    ssd1306_draw_string(&disp, 8, 24, 2,testMessage);
+    ssd1306_show(&disp);
+    busy_wait_ms(3000);
+    ssd1306_clear(&disp);
+    ssd1306_show(&disp);
+
+    int gahinterval = measure_median_interval(SENSOR_2_TRIG_PIN, SENSOR_2_ECHO_PIN, MAX_RANGE_2, 8);
+    char weeMessage[17];
+    sprintf(testMessage, "h: %d", gahinterval);
+
+    ssd1306_draw_string(&disp, 8, 24, 2,testMessage);
+    ssd1306_show(&disp);
+    busy_wait_ms(3000);
+    ssd1306_clear(&disp);
+    ssd1306_show(&disp);
+    */
+    ssd1306_draw_string(&disp, 8, 24, 2, "Loading");
+    ssd1306_show(&disp);
+        // Get initial rotary readings
     prevStateCLK1 = gpio_get(ROTARY_1_CLK_PIN);
     prevStateCLK2 = gpio_get(ROTARY_2_CLK_PIN);
     prevStateCLK3 = gpio_get(ROTARY_3_CLK_PIN);
@@ -138,31 +181,51 @@ int main()
     prevButtonState2 = gpio_get(ROTARY_2_SW_PIN);
     prevButtonState3 = gpio_get(ROTARY_3_SW_PIN);
 
+    static char message1[17];
+    static char message2[17];
+
+    board_init();
+    tusb_init();
+
+    static bool twentysix = false;
+    tud_task(); // tinyusb device task
+    busy_wait_ms(5000);
+    ssd1306_clear(&disp);
+    ssd1306_show(&disp);
+
     while (true)
         {
-            tud_task(); // tinyusb device task
+            gpio_put(26, twentysix);
+            twentysix = !twentysix;
+
             led_blinking_task();
+            
+            ssd_loop(&disp);
 
             uint8_t packet[4];
             while ( tud_midi_available() )
                 tud_midi_packet_read(packet);
 
-            midi_write_note(60, 127);
-            sleep_ms(1000);
-            midi_turn_off_note(60);
-            sleep_ms(100);
             // Check for rotary switch / button inputs
-            //read_rotaries();
-            /*
+            read_rotaries();
+
+            int vol, level, deg, pitch;
+
             if (operating_mode == 0) // single note melody mode
             {
-                int level = measure_median_interval(SENSOR_2_TRIG_PIN, SENSOR_2_TRIG_PIN, MAX_RANGE_2, 8);               
-                int vol = measure_median_interval(SENSOR_1_TRIG_PIN, SENSOR_1_TRIG_PIN, MAX_RANGE_1, 128);
+                level = measure_median_interval(SENSOR_2_TRIG_PIN, SENSOR_2_ECHO_PIN, MAX_RANGE_2, 8);               
+                vol = measure_median_interval(SENSOR_1_TRIG_PIN, SENSOR_1_ECHO_PIN, MAX_RANGE_1, 128);
+                
+                sprintf(message1, "l: %d", level);
+                sprintf(message2, "v: %d", vol);
+                ssd1306_clear(&disp);
+                ssd1306_draw_string(&disp, 0, 0, 1, message1);
+                ssd1306_draw_string(&disp, 0, 16, 1, message2);
 
                 if (level == -1)
                 {
                     if (prevMelodyNote != 0)
-                    midi_turn_off_note(prevMelodyNote);
+                        midi_turn_off_note(prevMelodyNote);
                     prevMelodyNote = 0;
                     continue;
                 }
@@ -170,8 +233,8 @@ int main()
                 if (vol == -1)
                     vol = 127;
 
-                int deg = level - PITCH_OFFSET;
-                int pitch = 0;
+                deg = level - PITCH_OFFSET;
+                pitch = 0;
 
                 if (deg >= 0)
                 {
@@ -197,7 +260,6 @@ int main()
                     prevVolume = vol;
                 }
             }
-            */
             /*
             else if (operating_mode == 1) // chords mode
             {
@@ -287,6 +349,7 @@ int main()
             
             // Check for foot pedal
             // Play note / chords
+            tud_task(); // tinyusb device task
         }
     return 0;
 }
@@ -379,9 +442,34 @@ void led_blinking_task(void)
     led_state = 1 - led_state; // toggle
 }
 
+void ssd_loop(ssd1306_t *disp)
+{
+    static uint32_t start_ms = 0;
+    static bool displayed = false;
+    static char message[6];
+
+    // Blink every interval ms
+    if (board_millis() - start_ms < blink_interval_ms)
+        return; // not enough time
+    start_ms += blink_interval_ms;
+
+    if (displayed)
+    {
+        ssd1306_clear(disp);
+        ssd1306_show(disp);
+    }else{
+        //ssd1306_draw_string(disp, 8, 24, 2, "loopin");
+        sprintf(message, "k: %d", key);
+        ssd1306_draw_string(disp, 8, 24, 2, message);
+        ssd1306_show(disp);
+    }
+    displayed = 1 - displayed; // toggle
+
+}
+
 void setup_gpios()
 {
-    //setup_ssd_gpios();
+    setup_ssd_gpios();
 
     gpio_init(ROTARY_1_CLK_PIN);
     gpio_init(ROTARY_1_DT_PIN);
