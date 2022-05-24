@@ -1,3 +1,5 @@
+/* Created by Godwin Duan May 17, 2022 - May 23, 2022 for Mr. Sato's 4th period AP Music Theory final project. */
+
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
@@ -64,12 +66,12 @@ void tud_umount_cb(void);
 void tud_suspend_cb(bool remote_wakeup_en);
 void tud_resume_cb(void);
 
-void ssd_loop(ssd1306_t *disp);
-void display_update(ssd1306_t *disp);
+void display_update(ssd1306_t *disp, char *line1, char *line2, char *line3, char *line4, char *line5);
 
 void get_note_name(int pitch, char *name);
 
-// TODO: write code for multiplexers
+void setLeftMux(int light);
+void setRightMux(int light);
 
 void read_rotaries();
 static bool prevStateCLK1;
@@ -85,6 +87,8 @@ static int prevMelodyNote = 0;
 static int prevVolume = 0;
 
 // Chords
+// TODO: When I compiled, I had these two variables initialized as zero.
+// Should have been something else as I chord cannot be played as the first chord
 static int prevInversion = 0;
 static int prevDegree = 0;
 static volatile struct Chord second, third;
@@ -97,16 +101,14 @@ static int prevFigBassInversion;
 static int prevDuetNote1 = 0;
 static int prevDuetNote2 = 0;
 
-static struct Note default_note; // is this necessary?
+static struct Note default_note; // is this even necessary?
 
-// TODO: add the other scales
 static const int melodic_major_scale[8] = {0, 2, 4, 5, 7, 9, 11, 12};
 static const int playable_natural_minor_scale[8] = {0, 2, 3, 5, 7, 8, 10, 12}; 
 
 static const char note_names[12][3] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char alt_note_names[12][3] = {"", "Db", "", "Eb", "", "", "Gb", "", "Ab", "", "Bb", "B"};
 
-// TODO: key and major need a solution to get to chords
 static int key = 48;
 static bool major = true;
 static int operating_mode = 0; // 0 -> melodies, 1 -> chords, 2 -> figured bass, 3 -> melody harmonization
@@ -116,7 +118,6 @@ static ssd1306_t disp;
 
 int main()
 {
-    //set_sys_clock_khz(250000, true);
     // Neccesary?
     default_note.pitch = 0;
     default_note.isSeventh = false;
@@ -142,9 +143,9 @@ int main()
     ssd1306_init(&disp, 128, 64, 0x3C, i2c0);
     ssd1306_clear(&disp);
 
-    //TODO: add name here
     ssd1306_draw_string(&disp, 8, 24, 2, "Loading");
     ssd1306_show(&disp);
+
     // Get initial rotary readings
     prevStateCLK1 = gpio_get(ROTARY_1_CLK_PIN);
     prevStateCLK2 = gpio_get(ROTARY_2_CLK_PIN);
@@ -153,6 +154,17 @@ int main()
     prevButtonState1 = gpio_get(ROTARY_1_SW_PIN); // it's high when not pressed, low when pressed
     prevButtonState2 = gpio_get(ROTARY_2_SW_PIN);
     prevButtonState3 = gpio_get(ROTARY_3_SW_PIN);
+
+    // initialize LEDs with a sweep
+    for (int i = 0; i < 8; i++)
+    {
+        setLeftMux(i);
+        setRightMux(i);
+        busy_wait_ms(250);
+    }
+    // then turn them off
+    setLeftMux(-1);
+    setRightMux(-1);
 
     board_init();
     tusb_init();
@@ -165,7 +177,7 @@ int main()
         tud_task();
 
     ssd1306_clear(&disp);
-    display_update(&disp);
+    display_update(&disp, "", "", "", "", "");
 
     while (true)
         {
@@ -173,8 +185,6 @@ int main()
             twentysix = !twentysix;
 
             led_blinking_task();
-            
-            //ssd_loop(&disp);
 
             uint8_t packet[4];
             while ( tud_midi_available() )
@@ -219,6 +229,12 @@ int main()
                         pitch = playable_natural_minor_scale[deg] + key - 12;
                 }
 
+                if (vol < 126)
+                    setLeftMux(vol / 18);
+                else
+                    setLeftMux(6);
+                setRightMux(deg);
+
                 if (pitch != prevMelodyNote || vol != prevVolume)
                 {
                     if (prevMelodyNote != 0)
@@ -236,6 +252,9 @@ int main()
                 int inversion = inversionConversion(inversionLevel);
 
                 // show LEDs with mux here
+                setLeftMux(inversionLevel);
+                setRightMux(degree);
+
                 // active low foot pedal
                 if ((degree != prevDegree || inversion != prevInversion) && !gpio_get(FOOT_PEDAL_PIN))
                 {
@@ -244,6 +263,90 @@ int main()
                     second = third;
                     prevDegree = degree;
                     prevInversion = inversion;
+                    char line1[8] = "";
+                    char line2[8] = "";
+                    char line3[8] = "";
+                    char line4[8] = "";
+                    char line5[8] = "";
+
+                    get_note_name(third.notes[3].pitch, line1);
+                    get_note_name(third.notes[2].pitch, line2);
+                    get_note_name(third.notes[1].pitch, line3);
+                    get_note_name(third.notes[0].pitch, line4);
+
+                    if (major)
+                    {
+                        switch (degree)
+                        {
+                        case 0:
+                            sprintf(line5, "I");
+                            break;
+
+                        case 1:
+                            sprintf(line5, "ii");
+                            break;
+
+                        case 2:
+                            sprintf(line5, "iii");
+                            break;
+
+                        case 3:
+                            sprintf(line5, "IV");
+                            break;
+
+                        case 4:
+                            sprintf(line5, "V");
+                            break;
+
+                        case 5:
+                            sprintf(line5, "vi");
+                            break;
+
+                        case 6:
+                            sprintf(line5, "vii*");
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        switch (degree)
+                        {
+                        case 0:
+                            sprintf(line5, "i");
+                            break;
+
+                        case 1:
+                            sprintf(line5, "ii*");
+                            break;
+
+                        case 2:
+                            sprintf(line5, "III+");
+                            break;
+
+                        case 3:
+                            sprintf(line5, "iv");
+                            break;
+
+                        case 4:
+                            sprintf(line5, "V");
+                            break;
+
+                        case 5:
+                            sprintf(line5, "VI");
+                            break;
+
+                        case 6:
+                            sprintf(line5, "vii*");
+                            break;
+                        }
+                    }
+
+                    char wordInversion[3];
+                    sprintf(wordInversion, "%2d", inversion);
+                    if (inversion != 0)
+                        strcat(line5, wordInversion);
+
+                    display_update(&disp, line1, line2, line3, line4, line5);
                 }
             }
             else if (operating_mode == 2) // figured bass mode
@@ -255,6 +358,9 @@ int main()
 
                 int actualNumeral = figBassToNumeral(key, major, bNote, inv);
                 // Show mux leds here
+                setLeftMux(invLevel);
+                setRightMux(bNote);
+
                 // Foot pedal active low
                 if ((bNote != prevBassNote || inv != prevInversion) && !gpio_get(FOOT_PEDAL_PIN))
                 {
@@ -263,6 +369,49 @@ int main()
                     second = third;
                     prevBassNote = bNote;
                     prevFigBassInversion = inv;
+
+                    char line1[8] = "";
+                    char line2[8] = "";
+                    char line3[8] = "";
+                    char line4[8] = "";
+                    char line5[8] = "";
+
+                    get_note_name(third.notes[3].pitch, line1);
+                    get_note_name(third.notes[2].pitch, line2);
+                    get_note_name(third.notes[1].pitch, line3);
+                    get_note_name(third.notes[0].pitch, line4);
+
+                    // TODO: add sharps when key is minor
+                    switch (actualNumeral)
+                    {
+                    case 0:
+                        break;
+
+                    case 1:
+                        sprintf(line5, "6");
+                        break;
+
+                    case 2:
+                        sprintf(line5, "64");
+                        break;
+
+                    case 3:
+                        sprintf(line5, "7");
+                        break;
+
+                    case 4:
+                        sprintf(line5, "65");
+                        break;
+
+                    case 5:
+                        sprintf(line5, "43");
+                        break;
+
+                    case 6:
+                        sprintf(line5, "42");
+                        break;
+                    }
+                    display_update(&disp, line1, line2, line3, line4, line5);
                 }
             }
             else if (operating_mode == 3) // duet mode
@@ -270,6 +419,14 @@ int main()
                 // note1 is bass (an octave lower), note2 is soprano
                 int note1 = measure_median_interval(SENSOR_1_TRIG_PIN, SENSOR_1_ECHO_PIN, MAX_RANGE_1, 8);               
                 int note2 = measure_median_interval(SENSOR_2_TRIG_PIN, SENSOR_2_ECHO_PIN, MAX_RANGE_2, 8);
+
+                // set lights
+                if (note1 == 7)
+                    setLeftMux(0);
+                else 
+                    setLeftMux(note1);
+                
+                setRightMux(note2);
 
                 if (note1 == -1)
                 {
@@ -409,33 +566,7 @@ void led_blinking_task(void)
     led_state = 1 - led_state; // toggle
 }
 
-// for testing
-void ssd_loop(ssd1306_t *disp)
-{
-    static uint32_t start_ms = 0;
-    static bool displayed = false;
-    static char message[6];
-
-    // Blink every interval ms
-    if (board_millis() - start_ms < blink_interval_ms)
-        return; // not enough time
-    start_ms += blink_interval_ms;
-
-    if (displayed)
-    {
-        ssd1306_clear(disp);
-        ssd1306_show(disp);
-    }else{
-        //ssd1306_draw_string(disp, 8, 24, 2, "loopin");
-        sprintf(message, "k: %d", key);
-        ssd1306_draw_string(disp, 8, 24, 2, message);
-        ssd1306_show(disp);
-    }
-    displayed = 1 - displayed; // toggle
-
-}
-
-void display_update(ssd1306_t *disp)
+void display_update(ssd1306_t *disp, char *line1, char *line2, char *line3, char *line4, char *line5)
 {
     ssd1306_clear(disp);
 
@@ -449,7 +580,7 @@ void display_update(ssd1306_t *disp)
     }
     else if (operating_mode == 2)
     {
-        ssd1306_draw_string(disp, 0, 0, 1, "Fig Bass");
+        ssd1306_draw_string(disp, 0, 0, 1, "Fig B");
     }
     else if (operating_mode == 3)
     {
@@ -457,20 +588,56 @@ void display_update(ssd1306_t *disp)
     }
 
 
-    char channelName[11] = "";
+    char channelName[8] = "";
     sprintf(channelName, "CHAN %d", midi_channel);
-    ssd1306_draw_string(disp, 64, 0, 1, channelName);
+    ssd1306_draw_string(disp, 72, 0, 1, channelName);
 
     ssd1306_draw_string(disp, 0, 8, 1, "Key");
     char keyName[8] = "";
     get_note_name(key, keyName);
 
-    ssd1306_draw_string(disp, 24, 0, 1, keyName);
+    ssd1306_draw_string(disp, 30, 8, 1, keyName);
 
     if (major)
-        ssd1306_draw_string(disp, 85, 8, 1, "Major");
+        ssd1306_draw_string(disp, 84, 8, 1, "Major");
     else
-        ssd1306_draw_string(disp, 85, 8, 1, "Minor");
+        ssd1306_draw_string(disp, 84, 8, 1, "Minor");
+    
+    if (strlen(line1) != 0)
+    {
+        if (strlen(line1) <= 3)
+            ssd1306_draw_string(disp, 56, 17, 1, line1);
+        else
+            ssd1306_draw_string(disp, 36, 17, 1, line1);
+    }
+    if (strlen(line2) != 0)
+    {
+        if (strlen(line2) <= 3)
+            ssd1306_draw_string(disp, 56, 26, 1, line2);
+        else
+            ssd1306_draw_string(disp, 36, 26, 1, line2);
+    }
+    if (strlen(line3) != 0)
+    {
+        if (strlen(line3) <= 3)
+            ssd1306_draw_string(disp, 56, 35, 1, line3);
+        else
+            ssd1306_draw_string(disp, 36, 35, 1, line3);
+    }
+    if (strlen(line4) != 0)
+    {
+        if (strlen(line4) <= 3)
+            ssd1306_draw_string(disp, 56, 44, 1, line4);
+        else
+            ssd1306_draw_string(disp, 36, 44, 1, line4);
+    }
+    if (strlen(line5) != 0)
+    {
+        if (strlen(line5) <= 3)
+            ssd1306_draw_string(disp, 56, 53, 1, line5);
+        else
+            ssd1306_draw_string(disp, 36, 53, 1, line5);
+    }
     ssd1306_show(disp);
 }
 
@@ -518,6 +685,7 @@ void setup_gpios()
 
     gpio_init(FOOT_PEDAL_PIN);
     gpio_set_dir(FOOT_PEDAL_PIN, GPIO_IN);
+    gpio_pull_up(FOOT_PEDAL_PIN);
 }
 
 void read_rotaries()
@@ -618,15 +786,152 @@ void read_rotaries()
 
     // update display
     if (changed)
-        display_update(&disp);
+        display_update(&disp, "", "", "", "", "");
 }
 
 void get_note_name(int pitch, char *name)
 {
     strcpy(name, note_names[pitch % 12]);
+
     if (strlen(alt_note_names[pitch % 12]))
     {
-        name[2] = '/';
-        strcpy(name + 3 * sizeof(char), alt_note_names[pitch % 12]);
+        name[2] = pitch / 12 - 1 + '0';
+        name[3] = '/';
+        strcpy(name + 4 * sizeof(char), alt_note_names[pitch % 12]);
+    }
+    else
+    {
+        name[1] = pitch / 12 - 1 + '0';
+    }
+}
+
+// Between 0 and 6. -1 or 7 will turn all off.
+void setLeftMux (int light)
+{
+    switch (light)
+    {
+        // y0
+        case 0:
+        gpio_put(MUX_1_A_PIN, 0);
+        gpio_put(MUX_1_B_PIN, 0);
+        gpio_put(MUX_1_C_PIN, 0);
+        break;
+
+        // y6
+        case 1:
+        gpio_put(MUX_1_A_PIN, 0);
+        gpio_put(MUX_1_B_PIN, 1);
+        gpio_put(MUX_1_C_PIN, 1);
+        break;
+
+        // y5
+        case 2:
+        gpio_put(MUX_1_A_PIN, 1);
+        gpio_put(MUX_1_B_PIN, 0);
+        gpio_put(MUX_1_C_PIN, 1);
+        break;
+
+        // y4
+        case 3:
+        gpio_put(MUX_1_A_PIN, 0);
+        gpio_put(MUX_1_B_PIN, 0);
+        gpio_put(MUX_1_C_PIN, 1);
+        break;
+
+        // y3
+        case 4:
+        gpio_put(MUX_1_A_PIN, 1);
+        gpio_put(MUX_1_B_PIN, 1);
+        gpio_put(MUX_1_C_PIN, 0);
+        break;
+
+        // y7
+        case 5:
+        gpio_put(MUX_1_A_PIN, 1);
+        gpio_put(MUX_1_B_PIN, 1);
+        gpio_put(MUX_1_C_PIN, 1);
+        break;
+
+        // y1
+        case 6:
+        gpio_put(MUX_1_A_PIN, 1);
+        gpio_put(MUX_1_B_PIN, 0);
+        gpio_put(MUX_1_C_PIN, 0);
+        break;
+
+        // y2
+        default:
+        gpio_put(MUX_1_A_PIN, 0);
+        gpio_put(MUX_1_B_PIN, 1);
+        gpio_put(MUX_1_C_PIN, 0);
+    }
+}
+
+// Between 0 and 7. -1 and 8+ will turn off
+
+void setRightMux(int light)
+{
+    gpio_put(MUX_2_DISABLE_PIN, 1); // enables mux
+
+    switch (light)
+    {
+        // y7
+        case 0:
+        gpio_put(MUX_2_A_PIN, 1);
+        gpio_put(MUX_2_B_PIN, 1);
+        gpio_put(MUX_2_C_PIN, 1);
+        break;
+
+        // y6
+        case 1:
+        gpio_put(MUX_2_A_PIN, 0);
+        gpio_put(MUX_2_B_PIN, 1);
+        gpio_put(MUX_2_C_PIN, 1);
+        break;
+
+        // y5
+        case 2:
+        gpio_put(MUX_2_A_PIN, 1);
+        gpio_put(MUX_2_B_PIN, 0);
+        gpio_put(MUX_2_C_PIN, 1);
+        break;
+
+        // y4
+        case 3:
+        gpio_put(MUX_2_A_PIN, 0);
+        gpio_put(MUX_2_B_PIN, 0);
+        gpio_put(MUX_2_C_PIN, 1);
+        break;
+
+        // y3
+        case 4:
+        gpio_put(MUX_2_A_PIN, 1);
+        gpio_put(MUX_2_B_PIN, 1);
+        gpio_put(MUX_2_C_PIN, 0);
+        break;
+
+        // y2
+        case 5:
+        gpio_put(MUX_2_A_PIN, 0);
+        gpio_put(MUX_2_B_PIN, 1);
+        gpio_put(MUX_2_C_PIN, 0);
+        break;
+
+        // y1
+        case 6:
+        gpio_put(MUX_2_A_PIN, 1);
+        gpio_put(MUX_2_B_PIN, 0);
+        gpio_put(MUX_2_C_PIN, 0);
+        break;
+
+        // y0
+        case 7:
+        gpio_put(MUX_2_A_PIN, 0);
+        gpio_put(MUX_2_B_PIN, 0);
+        gpio_put(MUX_2_C_PIN, 0);
+        break;
+
+        default:
+        gpio_put(MUX_2_DISABLE_PIN, 0);
     }
 }

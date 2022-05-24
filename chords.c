@@ -19,7 +19,7 @@ static const int harmonic_minor_scale[7] = {0, 2, 3, 5, 7, 8, 11};
 
 // Lookup table for note names
 
-static const int frustrated_leading_tone_penalty = 5;
+static const int frustrated_leading_tone_penalty = 10;
 static const int jumpy_alto_or_tenor_penalty_multiplier = 2;
 
 bool genChord(int key, bool major, int numeral, int inversion, struct Chord prev, volatile struct Chord *tobechanged)
@@ -64,7 +64,6 @@ bool genChord(int key, bool major, int numeral, int inversion, struct Chord prev
         }
 
     // Making sure all boolean leadingTone and isSevenths are false
-    // Maybe there's some way to initialize it to zero?
     for (int i = 0; i < 4; i++){
         masterAvailable[i].isLeadingTone = false;
         masterAvailable[i].isSeventh = false;
@@ -105,9 +104,6 @@ bool genChord(int key, bool major, int numeral, int inversion, struct Chord prev
                 masterAvailable[i].isLeadingTone = true;
         }
 
-    // checking validity of masterAvailable
-    // //printf("masterAvailable: %d %d %d %d\n", masterAvailable[0].pitch, masterAvailable[1].pitch, masterAvailable[2].pitch, masterAvailable[3].pitch);
-
     // Double notes
     for (int i = 0; i < 4; i++)
         {
@@ -138,17 +134,13 @@ bool genChord(int key, bool major, int numeral, int inversion, struct Chord prev
             struct Note temp = available[0];
             available[0] = available[bassNote];
             available[bassNote] = temp;
-            // //printf("Available after bass swap: %d %d %d %d\n", available[0].pitch, available[1].pitch, available[2].pitch, available[3].pitch);
 
-
-            // //printf("Available after double: %d %d %d %d\n", available[0].pitch, available[1].pitch, available[2].pitch, available[3].pitch);
             // permutations here
             static struct Chord guess;
             guess.score = 999;
             //doing it manually 6 times because I don't understand the recusive algorithm to do it
             for (int j = 0; j < 3; j++)
                 {
-                    // //printf("ROUND %d!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n",j);
                     int bassDownShift = 0;
                     if (j == 0)
                         bassDownShift = 12; // sometimes helps with preventing voice crossing
@@ -157,16 +149,13 @@ bool genChord(int key, bool major, int numeral, int inversion, struct Chord prev
                     int tenorTweak = 0;
                     if (j == 2 && best.notes[0].pitch == -69)
                     {
-                        //printf("Tweaking tenor\n");
                         tenorTweak = 12;
                     }
                 else if (j == 2)
                     {
-                        // //printf("ROUND 3 BREAKING!!!!!!!!!!!!!!!!!!!!!!\n");
                         break;
                     }
 
-                    // TODO: limit the range of the voices
                     guess.notes[0] = available[0];
                     guess.notes[1] = available[1];
                     guess.notes[2] = available[2];
@@ -258,97 +247,30 @@ bool genChord(int key, bool major, int numeral, int inversion, struct Chord prev
         best.notes[bassNote] = tmp;
 
         adjustSpacing(&best);
-        /*
-        board_led_write(0);
-        sleep_ms(2000);
-        blink(30);
-        board_led_write(1);
-        sleep_ms(5000);
-        */
+        
         *tobechanged = best;
-        return false; //what's here?????? TODO supposed to be false
+        return false;
     }
 
     *tobechanged = best;
     return true;
 }
 
-/*
-void printChord(struct Chord c)
-{
-    bool useLetters = true;
-    if (key % 12 == 0 && major && useLetters) // if key is C major
-    {
-        for (int i = 3; i >= 0; i--)
-            {
-                int cut = c.notes[i].pitch % 12; 
-                int whichOctave = c.notes[i].pitch / 12 - 1;
-                switch (cut)
-                    {
-                        case 0:
-                            printf("C");
-                            break;
-
-                        case 2:
-                            printf("D");
-                            break;
-
-                        case 4:
-                            printf("E");
-                            break;
-
-                        case 5:
-                            printf("F");
-                            break;
-
-                        case 7:
-                            printf("G");
-                            break;
-
-                        case 9:
-                            printf("A");
-                            break;
-
-                        case 11:
-                            printf("B");
-                            break;
-
-                        default:
-                            printf("unrecognized ");
-                            break;
-                    }
-            }
-        printf("\n");
-        return;
-    }
-
-    for (int i = 0; i < 4; i++)
-        {
-            printf("%d ", c.notes[i].pitch);
-        }
-    printf("\n");
-}
-*/
-
 int evalChord(int key, struct Chord previous, struct Chord next)
 {
-    //printf("Started eval\n");
-    //printChord(next);
     int score = 0;
 
     // check spacing
     if (!(next.notes[3].pitch >= next.notes[2].pitch && next.notes[2].pitch >= next.notes[1].pitch && next.notes[1].pitch >= next.notes[0].pitch))
     {
-        //printf("Voice Crossing\n");
-        return -1;
+        return -1; // voice crossing
     }
     if (next.notes[3].pitch - next.notes[2].pitch > 12 || next.notes[2].pitch - next.notes[1].pitch > 12)
     {
-        //printf("Notes more than octave apart\n");
-        return -1;
+        return -1; // upper notes more than octave apart
     }
 
-    // Incentivize spacing out the chord, to prevent future voice crossings
+    // Incentivize spacing out the chord, to prevent future voice overlaps
     score += 24 - (next.notes[3].pitch - next.notes[1].pitch);
 
     // Penalize bass moving out of G2-C4 range
@@ -362,18 +284,15 @@ int evalChord(int key, struct Chord previous, struct Chord next)
     // the following criteria depend on previous chord. If no previous chord, return score now.
     if (previous.notes[0].pitch == 0)
     {
-        //printf("No previous chord\n");
-        //printf("score: %d\n\n", score);
         return score;
     }
 
-    // check voice crossings
+    // check voice overlaps
     if (next.notes[0].pitch >= previous.notes[1].pitch ||
         next.notes[1].pitch <= previous.notes[0].pitch || next.notes[1].pitch >= previous.notes[2].pitch ||
         next.notes[2].pitch <= previous.notes[1].pitch || next.notes[2].pitch >= previous.notes[3].pitch ||
         next.notes[3].pitch <= previous.notes[2].pitch)
     {
-        //printf("Voices overlap\n");
         return -1;
     }
 
@@ -385,7 +304,7 @@ int evalChord(int key, struct Chord previous, struct Chord next)
             if (previous.notes[i].isLeadingTone)
             {
                 if (foundLeadingTone){
-                    //printf("Two leading tones\n");
+                    // Two leading tones
                     return -1;
                 }
                 leadingToneIndex = i;
@@ -401,7 +320,7 @@ int evalChord(int key, struct Chord previous, struct Chord next)
                 score += frustrated_leading_tone_penalty; // slightly punished
             else
                 {
-                    //printf("Leading tone didn't resolve \n");
+                    // Leading tone didn't resolve
                     return -1;
                 }
     // check seventh resolutions
@@ -414,17 +333,15 @@ int evalChord(int key, struct Chord previous, struct Chord next)
     if (seventhIndex != -1)
     {
         int seventhDifference = previous.notes[seventhIndex].pitch - next.notes[seventhIndex].pitch;
-        //printf("Seventh Difference: %d\n", seventhDifference);
+
         if (!(seventhDifference <= 2 && seventhDifference > 0)) // diff of zero means holding... TODO add a seventh holding bool variable 
         {
-            //printf("Seventh didn't resolve\n");
+            // Seventh didn't resolve
             return -1;
         }
     }
 
-    // TODO: else if difference == 0, mark the seventhIndex of next as a seventh
-
-    // check parallel fifths and octaves
+    // check for parallel fifths and octaves
     for (int i = 0; i < 4; i++)
         {
             for (int j = i; j < 4; j++)
@@ -438,26 +355,22 @@ int evalChord(int key, struct Chord previous, struct Chord next)
                     if (previous.notes[j].pitch == next.notes[j].pitch || previous.notes[i].pitch == next.notes[i].pitch)
                         continue;
 
-                    //printf("Diff %d and nextDiff %d\n", difference, nextDiff);
                     nextDiff %= 12;
                     difference %= 12;
-                    //printf("After modulo: Diff %d and nextDiff %d\n", difference, nextDiff);
                     if (nextDiff < 0)
                         nextDiff += 12;
                     if (difference < 0)
                         difference += 12;
 
-                    //printf("After adding: Diff %d and nextDiff %d\n", difference, nextDiff);
-
                     if (difference == 7 && difference == nextDiff)
                     {
-                        //printf("Found P5\n");
+                        // Found P5
                         return -1;
                     }
 
                     if (difference == 0 && difference == nextDiff)
                     {
-                        //printf("Found P8\n");
+                        // Found P8
                         return -1;
                     }
                 }
@@ -469,7 +382,7 @@ int evalChord(int key, struct Chord previous, struct Chord next)
     int altoChange = abs(next.notes[2].pitch - previous.notes[2].pitch);
     if (tenorChange > 7 || altoChange > 7)
     {
-        //printf("too much tenor or alto change\n");
+        // too much tenor or alto change
         return -1;
     }
 
@@ -480,15 +393,12 @@ int evalChord(int key, struct Chord previous, struct Chord next)
 
     // TODO: soprano over-jerkiness prevention?
 
-    //printf("score: %d\n\n", score);
     return score;
 }
 
 // recursively adjusts until spaced correctly
 void adjustSpacing(struct Chord *c)
 {
-    // //printf("adjusting spacing: ");
-    // printChord(*c);
     bool adjusted = false;
     if (c->notes[0].pitch > c->notes[1].pitch)
     {
@@ -507,9 +417,8 @@ void adjustSpacing(struct Chord *c)
     }
 
     // catch errors
-    if (abs(c->notes[0].pitch) > 120 || abs(c->notes[1].pitch) > 120 || abs(c->notes[2].pitch) > 120 || abs(c->notes[3].pitch) > 120)
+    if (abs(c->notes[0].pitch) > 127 || abs(c->notes[1].pitch) > 127 || abs(c->notes[2].pitch) > 127 || abs(c->notes[3].pitch) > 127)
     {
-        //printf("Error while adjusting spacing.\n");
         return;
     }
 
